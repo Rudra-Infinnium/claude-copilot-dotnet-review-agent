@@ -1,0 +1,62 @@
+# Automated PR code review for Azure DevOps Server (on-premises)
+#
+# This pipeline is NOT triggered by `pr:` — that trigger does not work for Azure Repos.
+# Attach it as a Branch Policy → Build Validation on your target branch instead.
+# See README.md in this folder for the full setup.
+
+trigger: none
+
+pool:
+  name: Default            # your self-hosted agent pool; change if yours is named differently
+
+variables:
+  - group: code-review     # variable group holding GITHUB_PAT and ADO_PAT as secrets
+
+steps:
+  - checkout: self
+    fetchDepth: 0          # full history — the task needs the merge base to compute the diff
+    persistCredentials: true
+
+  # PowerShell 7 is required by the task. Remove this step if pwsh is already
+  # installed on your self-hosted agent.
+  - task: PowerShell@2
+    displayName: 'Ensure PowerShell 7'
+    inputs:
+      targetType: inline
+      script: |
+        if (-not (Get-Command pwsh -ErrorAction SilentlyContinue)) {
+          Write-Host "pwsh not found. Install PowerShell 7 on this agent."
+          exit 1
+        }
+        pwsh --version
+
+  - task: CopilotCodeReview@1
+    displayName: 'AI code review'
+    inputs:
+      # --- AI engine: GitHub Copilot CLI (uses your existing Copilot subscription) ---
+      githubPat: '$(GITHUB_PAT)'
+      model: 'claude-sonnet-4.5'        # see the extension docs for the current model list
+
+      # --- Azure DevOps Server (on-prem) requires an explicit PAT, not the system token ---
+      useSystemAccessToken: false
+      azureDevOpsPat: '$(ADO_PAT)'
+      collectionUri: 'https://your-server/tfs/INFProjectCollection'   # <-- set your server URI
+
+      # --- Review scope and behaviour ---
+      diffOnlyReview: true              # review only what changed in the PR
+      promptFile: 'azure-devops/review-prompt.md'
+      timeout: '20'                     # minutes
+      includeWorkItems: false           # set true to feed linked work items in as context
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+# ---------------------------------------------------------------------------
+# Alternative engine: Claude Code CLI instead of GitHub Copilot CLI.
+# Requires an Anthropic API key (billed separately from your Copilot seats).
+# Swap the inputs above for these:
+#
+#     useClaudeCode: true
+#     anthropicApiKey: '$(ANTHROPIC_API_KEY)'
+#     maxTurns: '30'
+#     maxBudget: '2.00'      # USD cap per review
+# ---------------------------------------------------------------------------

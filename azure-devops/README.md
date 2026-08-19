@@ -1,179 +1,177 @@
-# Automated PR review in Azure DevOps
+# Automated PR review on Azure DevOps Server (on-premises)
 
-Turn on **Copilot code review** so every new pull request in your Azure Repos project gets reviewed automatically, with findings posted as inline comments on the changed lines.
+Post an AI code review as a comment on every pull request, using your existing review criteria and report format.
 
-This uses the review criteria from [`copilot-instructions.md`](copilot-instructions.md) in this folder — a condensed version of the `dotnet-code-reviewer` agent, sized for Copilot.
+## Why not the built-in Copilot code review
 
----
+Microsoft's Copilot code review for Azure Repos is **Azure DevOps Services only**. It is not available on Azure DevOps Server at any version.
 
-## What you get, and what you don't
+Proof:
+- The [documentation source](https://github.com/MicrosoftDocs/azure-devops-docs/blob/main/docs/repos/git/copilot-code-reviews.md) includes `version-eq-azure-devops`, which in Microsoft's docs versioning means Services only. Pages covering on-prem use `version-gt-eq-2022` or similar.
+- Its prerequisites require *"An Azure subscription linked to your Azure DevOps organization"* for consumption billing. On-prem has no such linkage.
+- On an on-prem collection, **Collection Settings → Repos → Repositories** shows no "GitHub Copilot code review" section at all — the feature is absent, not permission-gated.
+
+So this folder uses a different route.
+
+## What this uses
+
+The [Copilot Code Review](https://marketplace.visualstudio.com/items?itemName=LittleFortSoftware.ado-copilot-code-review) extension by Little Fort Software ([source](https://github.com/little-fort/ado-copilot-code-review)) — free, open source, and explicitly supports Azure DevOps Server via PAT authentication.
+
+It runs as a pipeline task, drives either GitHub Copilot CLI or Claude Code CLI, and posts the result as a comment on the pull request.
 
 | | |
 |---|---|
-| ✅ | Automatic review on every new PR, no pipeline code to write |
-| ✅ | Inline comments anchored to the offending lines |
-| ✅ | Your review criteria, via instruction files |
-| ❌ | **No `DOTNET_CODE_REVIEW.md` file** — comments only. Your local agent still produces the file. |
-| ❌ | **Not your report format** — Copilot writes its own comment style. The instructions ask it to prefix severity, but the four-bullet layout is local-only. |
-| ❌ | **Can't block a merge.** Copilot always leaves a *Comment* review, never *Approve* or *Request changes*, so it doesn't satisfy required-reviewer policies. |
+| ✅ | Comment on the PR, using **your exact report format** (via `promptFile`) |
+| ✅ | Uses your existing **GitHub Copilot subscription** — no new AI billing |
+| ✅ | Reviews **only the PR diff** (`diffOnlyReview`) |
+| ✅ | Works on **Azure DevOps Server** |
+| ❌ | General PR comments only — no inline annotations on individual lines |
+| ❌ | Third-party extension — review it before adopting |
+
+## Files in this folder
+
+| File | Purpose |
+|---|---|
+| `review-prompt.md` | The review instructions and output format. Points the AI at your criteria and locks the report structure. |
+| `azure-pipelines-review.yml` | The pipeline. Copy into your target repo and edit the marked values. |
 
 ---
 
-## Before you start — three blockers to check
+## Prerequisites
 
-**1. You need a Project Collection Administrator.**
-The organization-level toggle can only be flipped by a PCA. If that isn't you, this is a request to whoever owns the Azure DevOps organization. Nothing else works until it's on.
+**1. Your build agent must reach the internet.** The task downloads a CLI and calls an AI service. Test from the agent machine:
 
-**2. The default Azure Pipelines agent pool must be available.**
-Copilot code review runs its jobs on it. **Self-hosted pools are not supported.** If your organization disabled the default pool, you need a [Managed DevOps Pool](https://learn.microsoft.com/en-us/azure/devops/managed-devops-pools/overview) configured first.
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" https://api.githubcopilot.com
+```
 
-**3. Billing is separate from your Copilot seats.**
-Per Microsoft's FAQ: *"usage in Azure DevOps doesn't use AI credits from GitHub Copilot plans."* Reviews are billed as consumption against the Azure subscription linked to your DevOps organization, metered in GitHub AI credits at $0.01 each. **Set a budget alert before enabling anything** — see [Cost control](#cost-control) below.
+Any HTTP response means you got through. A timeout means egress is blocked and none of this will work until that's resolved.
+
+**2. PowerShell 7+ on the agent.** The task requires `pwsh`. Check with `pwsh --version`.
+
+**3. GitHub organization policy.** An org admin must set **GitHub Policies → Copilot → Copilot CLI** to **Enabled everywhere**, or the CLI will be refused.
 
 ---
 
-## Step 1 — Enable at the organization level (PCA only)
+## Step 1 — Install the extension
 
-1. Go to `https://dev.azure.com/{yourorganization}`
-2. **Organization settings** → **Repos** → **Repositories**
-3. Under **GitHub Copilot code review**, turn on **Allow repositories in this organization to use Copilot code review**
+Azure DevOps Server uses its own extension gallery, separate from the cloud marketplace.
 
-> **Do not use "Enable all."** That switches the feature on for every project and repository at once. Leave org-level access on, then enable one project at a time.
+1. Download the extension `.vsix` from the [marketplace page](https://marketplace.visualstudio.com/items?itemName=LittleFortSoftware.ado-copilot-code-review) (**Get it free** → **Download**)
+2. In your collection: **Collection Settings** → **Extensions** → **Browse local extensions** → **Manage extensions** → **Upload extension**
+3. Upload the `.vsix`, then install it to your collection
 
-## Step 2 — Enable for your project (Project Administrator)
+> If the upload is rejected, the extension may not declare Server compatibility. Fall back to a custom pipeline script — ask and I'll write one.
 
-1. **Project settings** → **Repos** → **Repositories**
-2. Under **GitHub Copilot code review**, turn on **Enable Copilot code review for this project**
+## Step 2 — Create the two tokens
 
-## Step 3 — Enable for the repository (repo owner)
+### Azure DevOps PAT (on-prem requires this — the system token isn't enough)
 
-1. **Project settings** → **Repos** → **Repositories** → select your repository
-2. On the **Settings** tab, turn on **Enable Copilot code review for pull requests in this repository**
+**User settings → Personal access tokens → New Token**, with scopes:
 
-Verify it worked: open any PR in that repo. **GitHub Copilot** should now appear in the **Reviewers** list.
+| Scope | Access |
+|---|---|
+| Code | Read |
+| Pull Request Threads | Read & Write |
+| Work Items | Read *(only if you set `includeWorkItems: true`)* |
 
-## Step 4 — Turn on automatic review
+### GitHub PAT (for Copilot CLI)
 
-Enabling the feature only makes it *available*. Automatic review is a separate switch.
+On GitHub: **Settings → Developer settings → Personal access tokens → Fine-grained tokens**
 
-**Project settings** → **Repos** → **Repositories** → your repository → **Settings** tab → under **GitHub Copilot code review**, turn on **Automatically request Copilot code review on new pull requests**.
+| Setting | Value |
+|---|---|
+| Repository access | Public repositories |
+| Permission | **Copilot Requests** |
 
-Then choose the scope:
-- **Apply to all pull requests** — every new PR in the repo
-- **Apply to specific branch policies** — only PRs targeting branches you name, e.g. `main`
+## Step 3 — Store them as pipeline secrets
 
-> To cover every repo in the project at once, use the project-level toggle instead: **Automatically request Copilot code review on new pull requests for all repositories in this project**. Repository-level settings override the project default.
+**Pipelines → Library → + Variable group**, named `code-review`:
 
-## Step 5 — Install the review criteria
+| Name | Value | Secret |
+|---|---|---|
+| `GITHUB_PAT` | your GitHub fine-grained token | ✅ |
+| `ADO_PAT` | your Azure DevOps PAT | ✅ |
 
-You have two places to put them. **Project level is recommended** if your Azure DevOps project holds only .NET repos — it applies to every repo automatically, and you can edit it without a merge.
+Click the padlock on each so they're stored encrypted.
 
-### Option A — Project level (recommended)
+## Step 4 — Add the files to your target repo
 
-Copy the contents of [`copilot-instructions.md`](copilot-instructions.md) and paste it into the custom instructions field under **Project settings** → **Repos** → **Repositories** → **GitHub Copilot code review**.
-
-Takes effect immediately.
-
-### Option B — Repository level
-
-Commit the file into the repo:
+Copy both files from this folder into the repository you want reviewed:
 
 ```powershell
-New-Item -ItemType Directory -Force ".azuredevops" | Out-Null
-Copy-Item "path\to\copilot-instructions.md" ".azuredevops\copilot-instructions.md"
-git add .azuredevops\copilot-instructions.md
-git commit -m "Add Copilot code review instructions"
-git push
+New-Item -ItemType Directory -Force "azure-devops" | Out-Null
+Copy-Item "path\to\review-prompt.md" "azure-devops\"
+Copy-Item "path\to\azure-pipelines-review.yml" "azure-devops\"
 ```
 
-`.github/copilot-instructions.md` works too if you prefer that location.
+Then edit `azure-pipelines-review.yml`:
 
-> **Important:** Copilot reads repository-level instruction files from the **target branch only**. Changes made inside a PR do not affect that PR's review — they take effect after merge. Project-level instructions have no such delay, which is why Option A is easier to iterate on.
+- `pool: name:` — your self-hosted agent pool name
+- `collectionUri:` — your server URI, e.g. `https://tfs.infinnium.com/tfs/INFProjectCollection`
+- `model:` — check the extension docs for the current list
 
-### Path-scoped rules (optional)
+Commit and push to your **default branch**. The pipeline must exist on the target branch to be selectable as a policy.
 
-For per-folder rules, add `*.instructions.md` files under `.azuredevops/instructions/` with an `applyTo` front matter:
+## Step 5 — Create the pipeline
 
-```markdown
----
-applyTo: "billing/**,payments/**"
----
-- Flag any money arithmetic that does not use Decimal.
-- Any change to a public function here must be checked against callers in `api/`.
-```
+**Pipelines → New pipeline → Azure Repos Git** → your repo → **Existing Azure Pipelines YAML file** → select `/azure-devops/azure-pipelines-review.yml` → **Save** (not *Save and run*).
 
-A path-scoped file without `applyTo` is skipped.
+## Step 6 — Grant the build identity permission to comment
 
----
+Without this, posting the comment returns 403 with a confusing error.
 
-## Cost control
+**Project settings → Repos → Repositories** → your repo → **Security** tab → find **`<Project Name> Build Service`** → set **Contribute to pull requests** to **Allow**.
 
-**Set a budget alert first:**
+## Step 7 — Wire it to pull requests
 
-1. [Azure portal](https://portal.azure.com) → the subscription linked to your DevOps organization
-2. **Cost Management** → **Budgets** → **Add**
-3. Under **Filters**, add **Product** = `GitHub Copilot for AzDO`
-4. Set an amount and alert thresholds (e.g. 75%, 90%), add email recipients
+The YAML `pr:` trigger does not work for Azure Repos. Use a branch policy instead:
 
-Charges take **48 hours** to appear in the portal, so don't judge cost on the first day.
+**Project settings → Repos → Repositories** → your repo → **Policies** → select your target branch (e.g. `main`) → **Build Validation** → **+**
 
-Charges carry Azure DevOps **project tags**, so if you keep one project per technology you get per-team cost attribution by grouping on that tag.
-
-To estimate before rolling out widely, enable it on one or two repositories and watch daily usage for a week.
-
----
-
-## Limits during preview
-
-| Limit | Value |
+| Setting | Value |
 |---|---|
-| Pull request status | Must be **Active** with no merge conflicts |
-| Repository size | 10 GB or less |
-| Changed files per PR | 100 or fewer |
-| Concurrent reviews per organization | 5 |
-| Concurrent reviews per user | 2 |
-| Completed reviews per merge commit | 1 |
+| Build pipeline | the pipeline from Step 5 |
+| Trigger | Automatic |
+| Policy requirement | **Optional** |
+| Build expiration | Immediately when `main` is updated |
 
-**Copilot does not re-review when you push new commits.** To get a fresh review, click **Request** again next to **GitHub Copilot** in the Reviewers list.
+> Set it to **Optional**, not Required. Optional means the review runs and comments but never blocks a merge — which is what you want while you're building trust in the findings. Switch to Required later if you decide a failed review should gate merges.
 
----
+## Step 8 — Test it
 
-## Data residency — check this with your compliance team
-
-From Microsoft's FAQ:
-
-> Data residency for GitHub Copilot doesn't align with Azure DevOps organization data residency boundaries for this preview feature. For example, if your Azure DevOps organization is hosted in the EU, Copilot code review processing might still occur in another geography, such as the United States.
-
-So source code may be processed outside your organization's region. On the other hand, PR diffs, prompts, and responses are **not** used to train foundation models.
-
-If data residency is a hard requirement, the alternative is a custom Azure Pipeline calling an Azure OpenAI deployment inside your own tenant and region.
+Open a pull request with a deliberate problem — an unclosed DB session, a bare `except:`. Within a few minutes a comment should appear on the PR in your report format.
 
 ---
 
-## Preview status
+## Customising the review
 
-This feature is in **limited preview**: no SLA, limited support, and it can change or be removed without notice. Fine as an extra reviewer; don't make it the only thing standing between bad code and `main`.
+Everything about what gets reviewed and how it's reported lives in **`review-prompt.md`**. Edit that file, commit it, and the next review picks it up.
 
----
+Unlike Microsoft's Copilot code review, there's no target-branch delay here — the prompt file is read from the checked-out branch at build time.
+
+## Cost
+
+The GitHub Copilot CLI path bills against your existing Copilot subscription rather than a separate meter. Whether it consumes premium requests isn't documented by the extension — **watch your Copilot usage for the first week** and confirm the rate is acceptable before enabling on busy repos.
+
+If you switch to the Claude Code CLI path, that's a separate Anthropic API bill, but the `maxBudget` input caps spend per review.
 
 ## Troubleshooting
 
-**"GitHub Copilot" doesn't appear in the Reviewers list**
-One of the three scopes isn't enabled. Re-check organization → project → repository in order.
+**403 when posting the comment** — the Build Service identity lacks *Contribute to pull requests* (Step 6), or the ADO PAT is missing the *Pull Request Threads: Read & Write* scope.
 
-**Reviews never start**
-Your organization may have disabled the default Azure Pipelines pool. Check **Organization settings** → **Repos** → **Repositories** → **Compute pool**, and select a Managed DevOps Pool if one exists.
+**"pwsh not found"** — install PowerShell 7 on the agent.
 
-**Copilot ignores your instructions**
-Confirm the file is committed to the **target branch**, not just the PR branch. Keep the file concise — long instruction files get partially overlooked. Then click **Request** again to trigger a fresh review.
+**Copilot CLI refuses to run** — the GitHub org policy for Copilot CLI isn't enabled (Prerequisites, item 3).
 
-**A review failed**
-**Organization settings** → **Agent pools** → the pool used for reviews → find the failed job → read the raw logs.
+**The review ignores your prompt file** — check the `promptFile` path is relative to the repo root and that the file is committed on the PR's source branch.
+
+**Nothing runs on a PR** — the branch policy isn't attached, or it's on the wrong target branch. Check **Policies** on the branch the PR targets, not the source branch.
 
 ---
 
 ## Sources
 
-- [Get started with Copilot code review for pull requests — Azure Repos](https://learn.microsoft.com/en-us/azure/devops/repos/git/copilot-code-reviews?view=azure-devops)
-- [Configure Copilot code review instructions — Azure Repos](https://learn.microsoft.com/en-us/azure/devops/repos/git/configure-copilot-code-review-instructions?view=azure-devops)
-- [Troubleshoot Copilot code review](https://learn.microsoft.com/en-us/azure/devops/repos/git/copilot-code-reviews-faq?view=azure-devops)
+- [Copilot Code Review extension — marketplace](https://marketplace.visualstudio.com/items?itemName=LittleFortSoftware.ado-copilot-code-review)
+- [Extension source and docs](https://github.com/little-fort/ado-copilot-code-review)
+- [Copilot code review for Azure Repos — Microsoft Learn](https://learn.microsoft.com/en-us/azure/devops/repos/git/copilot-code-reviews?view=azure-devops) (Services only)
