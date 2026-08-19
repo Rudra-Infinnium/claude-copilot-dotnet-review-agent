@@ -254,39 +254,49 @@ Open `DOTNET_CODE_REVIEW.md` in the editor to review the results.
 
 ## What the report looks like
 
-The report is built to be scanned, not read. Findings are grouped by file with the line number, a one-sentence problem, and a one-line fix:
+The generated `DOTNET_CODE_REVIEW.md` follows this structure. `Issue` and `Recommendation` are capped at 2–3 lines each so the report stays scannable:
 
 ```markdown
-# .NET Code Review
+# .NET Code Review Report
 
-2026-08-19 · Full project: 42 files across 3 projects · net8.0 · 1 Critical, 3 High, 4 Medium
+**Date:** 2026-08-19
+**Mode:** Full project
+**Scope:** 42 C# files across 3 projects. Target framework: net8.0
 
-## Summary
-Clean separation across Api/Application/Infrastructure and DI is used consistently.
-Main risks are an unguarded exception path and a captive dependency in the DbContext registration.
+## Executive Summary
+Separation across Api/Application/Infrastructure is clean and DI is used consistently.
+The main risks are a captive dependency in the DbContext registration and an unguarded
+exception path that leaks stack traces to callers.
 
 ## Findings
 
-### src/Api/Program.cs
+### Critical
 
-**L34 · Critical** — No global exception middleware, so unhandled exceptions leak stack traces to callers
-→ Add `app.UseExceptionHandler()` returning `ProblemDetails`
+#### DbContext registered as Singleton
+- **Location:** `src/Api/Program.cs` — `Program.Main` (line 52)
+- **Severity:** Critical
+- **Issue:** `AppDbContext` is registered as a singleton, so one instance is shared across
+  all requests. It isn't thread-safe — concurrent requests corrupt the change tracker.
+- **Recommendation:** Use `builder.Services.AddDbContext<AppDbContext>(...)`, which
+  registers it as scoped.
 
-**L52 · High** — `AppDbContext` registered as `Singleton`, captive dependency and not thread-safe
-→ Change to `AddDbContext<AppDbContext>()` (scoped by default)
+### High
 
-### src/Application/Orders/OrderService.cs
+#### No global exception handler
+- **Location:** `src/Api/Program.cs` — `Program.Main` (line 34)
+- **Severity:** High
+- **Issue:** Unhandled exceptions propagate to the client with full stack traces,
+  exposing internal paths and library versions.
+- **Recommendation:** Add `app.UseExceptionHandler()` returning a `ProblemDetails`
+  response, and log the exception server-side.
 
-**L88 · High** — `.Result` blocks the thread pool under load
-→ Make the method `async` and `await` the call
+### Medium
+### Low
 
-**L120 · Medium** — Query materialises the full table before filtering in memory
-→ Move the `Where` before `ToListAsync()`
-
-## Fix these first
-1. `Program.cs:52` — Fix DbContext lifetime — data corruption risk under concurrency
-2. `Program.cs:34` — Add exception handler — info leak on every unhandled error
-3. `OrderService.cs:88` — Remove `.Result` — thread pool starvation at load
+## Top 3 Fixes to Tackle First
+1. **Fix DbContext lifetime** — data corruption risk under concurrency.
+2. **Add global exception handler** — info leak on every unhandled error.
+3. **Remove blocking `.Result` calls** — thread pool starvation under load.
 ```
 
 ---

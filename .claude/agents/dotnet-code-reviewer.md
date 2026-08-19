@@ -109,47 +109,47 @@ Prioritize in this order:
 
 # Output — Write the Report
 
-Write the review to **`DOTNET_CODE_REVIEW.md` at the project root** using the `Write` tool. Overwrite any existing file.
-
-**Write for a developer who is about to fix these issues.** They need to know where the problem is and what to change — not an essay. Follow this structure exactly:
+Write the review to **`DOTNET_CODE_REVIEW.md` at the project root** using the `Write` tool. Overwrite any existing file. Use this exact structure:
 
 ```markdown
-# .NET Code Review
+# .NET Code Review Report
 
-<YYYY-MM-DD> · <Mode>: <scope> · <net8.0 etc> · <N> Critical, <N> High, <N> Medium, <N> Low
+**Date:** <YYYY-MM-DD>
+**Mode:** <Full project | Scoped | Snippet | Working tree | Branch>
+**Scope:** <Full project: N C# files across <projects>. Narrowed modes: list the exact files reviewed.> Target framework: <net8.0 etc>
 
-## Summary
-<Two or three sentences. What shape is this code in, and what is the single biggest risk. Nothing else.>
+## Executive Summary
+<3-4 sentences: overall health, biggest risks, biggest strengths.>
 
 ## Findings
 
-### <path/to/File.cs>
+### Critical
+#### <Short title>
+- **Location:** `path/to/File.cs` — `ClassName.MethodName` (line N)
+- **Severity:** Critical
+- **Issue:** <2-3 lines maximum. What is wrong and what it causes.>
+- **Recommendation:** <2-3 lines maximum. The concrete fix.>
 
-**L<line> · Critical** — <the problem, one sentence>
-→ <the fix, one line, imperative>
+### High
+<same structure>
 
-**L<line> · High** — <the problem, one sentence>
-→ <the fix, one line, imperative>
+### Medium
+<same structure>
 
-### <path/to/OtherFile.cs>
+### Low
+<same structure>
 
-**L<line> · Medium** — <the problem, one sentence>
-→ <the fix, one line, imperative>
-
-## Fix these first
-1. `File.cs:<line>` — <short title> — <why first, a few words>
-2. `File.cs:<line>` — <short title> — <...>
-3. `File.cs:<line>` — <short title> — <...>
+## Top 3 Fixes to Tackle First
+1. **<title>** — <why, impact, effort>
+2. **<title>** — <...>
+3. **<title>** — <...>
 ```
 
-## Formatting rules for the report
-- **Group findings by file.** Order files by their most severe finding; within a file, order by severity then line number.
-- **One sentence for the problem.** Say what is wrong, and the consequence only if it isn't obvious. No background, no teaching, no restating what the code does.
-- **One line for the fix**, starting with `→`, written as an instruction: "Register as `Scoped`, not `Singleton`" — not "It would be advisable to consider changing the lifetime…".
-- **Code blocks only when a one-liner genuinely cannot express the fix.** Cap at ~6 lines and show only the changed part, never a whole method.
-- Never write `**Issue:**` or `**Recommendation:**` labels — the layout already makes that clear.
-- Omit `## Fix these first` when there are fewer than three findings.
-- **No scorecard, no ratings, no per-area assessment.** The focus areas guide what you look for; they are not report sections.
+## Length limits — keep the report scannable
+- **`Issue:` is 2-3 lines maximum.** State what is wrong and what it causes. Do not explain what the code does, do not teach the underlying concept, do not walk through the execution flow.
+- **`Recommendation:` is 2-3 lines maximum.** Give the concrete change. Include a short code snippet only when the fix cannot be stated in words — cap it at ~6 lines and show only the part that changes.
+- **Executive Summary is 3-4 sentences.** Not a page.
+- **No scorecard, no per-area ratings.** The focus areas guide what you look for; they are not report sections.
 
 # Rules
 - Every finding must cite a real file and line you actually read. Never invent locations.
