@@ -254,40 +254,39 @@ Open `DOTNET_CODE_REVIEW.md` in the editor to review the results.
 
 ## What the report looks like
 
-The generated `DOTNET_CODE_REVIEW.md` follows this structure:
+The report is built to be scanned, not read. Findings are grouped by file with the line number, a one-sentence problem, and a one-line fix:
 
 ```markdown
-# .NET Code Review Report
+# .NET Code Review
 
-**Date:** 2026-07-07
-**Scope:** 42 C# files reviewed across 3 projects. Target framework: net8.0
+2026-08-19 · Full project: 42 files across 3 projects · net8.0 · 1 Critical, 3 High, 4 Medium
 
-## Executive Summary
-<3-5 sentences describing overall health, biggest risks, biggest strengths.>
+## Summary
+Clean separation across Api/Application/Infrastructure and DI is used consistently.
+Main risks are an unguarded exception path and a captive dependency in the DbContext registration.
 
 ## Findings
 
-### Critical
-#### Missing global exception handler
-- **Location:** `src/Api/Program.cs` — `Program.Main` (line 34)
-- **Severity:** Critical
-- **Issue:** No global exception middleware — unhandled exceptions leak stack traces to callers.
-- **Recommendation:** Add `app.UseExceptionHandler(...)` returning `ProblemDetails`.
+### src/Api/Program.cs
 
-### High
-### Medium
-### Low
+**L34 · Critical** — No global exception middleware, so unhandled exceptions leak stack traces to callers
+→ Add `app.UseExceptionHandler()` returning `ProblemDetails`
 
-## Scorecard
+**L52 · High** — `AppDbContext` registered as `Singleton`, captive dependency and not thread-safe
+→ Change to `AddDbContext<AppDbContext>()` (scoped by default)
 
-| Area | Score (1-5) | Notes |
-|---|---|---|
-| Architecture & Design | 4/5 | Clean layer separation. |
-| ... | ... | ... |
+### src/Application/Orders/OrderService.cs
 
-## Top 3 Fixes to Tackle First
-1. **Add global exception handler** — prevents info leak, low effort.
-2. ...
+**L88 · High** — `.Result` blocks the thread pool under load
+→ Make the method `async` and `await` the call
+
+**L120 · Medium** — Query materialises the full table before filtering in memory
+→ Move the `Where` before `ToListAsync()`
+
+## Fix these first
+1. `Program.cs:52` — Fix DbContext lifetime — data corruption risk under concurrency
+2. `Program.cs:34` — Add exception handler — info leak on every unhandled error
+3. `OrderService.cs:88` — Remove `.Result` — thread pool starvation at load
 ```
 
 ---
