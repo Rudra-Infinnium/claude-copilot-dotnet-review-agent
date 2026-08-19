@@ -109,7 +109,11 @@ Prioritize in this order:
 
 # Output — Write the Report
 
-Write the review to **`DOTNET_CODE_REVIEW.md` at the project root** using the `Write` tool. Overwrite any existing file. Use this exact structure:
+Write the review to **`DOTNET_CODE_REVIEW.md` at the project root** using the `Write` tool. Overwrite any existing file.
+
+## Required structure
+
+Reproduce this layout exactly. Do not rename headings, do not renumber, do not substitute your own labels.
 
 ```markdown
 # .NET Code Review Report
@@ -124,31 +128,68 @@ Write the review to **`DOTNET_CODE_REVIEW.md` at the project root** using the `W
 ## Findings
 
 ### Critical
-#### <Short title>
+
+#### <Short title of the issue>
 - **Location:** `path/to/File.cs` — `ClassName.MethodName` (line N)
 - **Severity:** Critical
-- **Issue:** <2-3 lines maximum. What is wrong and what it causes.>
-- **Recommendation:** <2-3 lines maximum. The concrete fix.>
+- **Issue:** <2-3 lines. What is wrong and what it causes.>
+- **Recommendation:** <2-3 lines. The concrete fix.>
+
+#### <Next Critical issue — same four bullets>
 
 ### High
-<same structure>
+
+#### <Short title of the issue>
+- **Location:** `path/to/File.cs` — `ClassName.MethodName` (line N)
+- **Severity:** High
+- **Issue:** <2-3 lines.>
+- **Recommendation:** <2-3 lines.>
 
 ### Medium
-<same structure>
+
+#### <Short title of the issue>
+- **Location:** `path/to/File.cs` — `ClassName.MethodName` (line N)
+- **Severity:** Medium
+- **Issue:** <2-3 lines.>
+- **Recommendation:** <2-3 lines.>
 
 ### Low
-<same structure>
+
+#### <Short title of the issue>
+- **Location:** `path/to/File.cs` — `ClassName.MethodName` (line N)
+- **Severity:** Low
+- **Issue:** <2-3 lines.>
+- **Recommendation:** <2-3 lines.>
 
 ## Top 3 Fixes to Tackle First
-1. **<title>** — <why, impact, effort>
+1. **<title>** — <why this is #1, expected impact, rough effort>
 2. **<title>** — <...>
 3. **<title>** — <...>
 ```
 
-## Length limits — keep the report scannable
-- **`Issue:` is 2-3 lines maximum.** State what is wrong and what it causes. Do not explain what the code does, do not teach the underlying concept, do not walk through the execution flow.
-- **`Recommendation:` is 2-3 lines maximum.** Give the concrete change. Include a short code snippet only when the fix cannot be stated in words — cap it at ~6 lines and show only the part that changes.
-- **Executive Summary is 3-4 sentences.** Not a page.
+## Worked example — match this shape exactly
+
+```markdown
+### Critical
+
+#### DbContext registered as Singleton
+- **Location:** `src/Api/Program.cs` — `Program.Main` (line 52)
+- **Severity:** Critical
+- **Issue:** `AppDbContext` is registered as a singleton, so one instance is shared across
+  all requests. It is not thread-safe — concurrent requests corrupt the change tracker.
+- **Recommendation:** Use `builder.Services.AddDbContext<AppDbContext>(...)`, which
+  registers it as scoped.
+```
+
+## Hard rules for the report — these are not suggestions
+- Severity headings are **exactly** `### Critical`, `### High`, `### Medium`, `### Low`. Never append parentheticals like "(must fix)" or "(should fix)".
+- Every finding is an `####` heading with a short title. **Never a numbered or bulleted list of findings.**
+- Every finding has **exactly these four bullets, in this order, with these exact labels**: `**Location:**`, `**Severity:**`, `**Issue:**`, `**Recommendation:**`.
+- **Never rename the labels.** Do not write "Symptom", "Files", "Fix", "Problem", "Impact", "Why", or any other wording in their place.
+- `**Location:**` must carry a real line number in the form `(line N)`. If a finding spans several files, name the primary one here and mention the others inside `Issue:`.
+- Omit a whole severity section only when it has no findings.
+- `Issue:` and `Recommendation:` are 2-3 lines each. No explaining what the code does, no teaching the underlying concept, no walking through the execution flow.
+- Code snippets only when the fix cannot be stated in words — cap at ~6 lines, show only the part that changes.
 - **No scorecard, no per-area ratings.** The focus areas guide what you look for; they are not report sections.
 
 # Rules
