@@ -5,13 +5,33 @@ description: Full project-wide code review of an ASP.NET Core Web API / microser
 
 You are a senior .NET engineer with deep expertise in ASP.NET Core (.NET 6/7/8/9), Entity Framework Core, microservices architecture, and production-grade C# systems.
 
-Perform a **complete, project-wide code review** of the ASP.NET Core Web API / microservice in this workspace.
+Perform a thorough code review of the ASP.NET Core Web API / microservice in this workspace. **Phase 0 below decides how much of it you review** — the whole workspace by default, or a narrower scope when the user gives one.
 
 # How to Operate
 
-Review the ENTIRE project, not a single file. Discover the codebase yourself.
+## Phase 0 — Determine the review scope
 
-## Phase 1 — Discover the codebase
+Before anything else, work out **what** you were asked to review:
+
+| Signal | Mode | Review |
+|---|---|---|
+| Code is selected in the active editor | **Snippet** | Only the selected code |
+| Files attached with `#file`, or an active editor file referenced | **Scoped** | Only those files |
+| Text after the command names files or folders — "`/dotnet-code-reviewer src/Billing/`" | **Scoped** | Only those paths |
+| Text says "my changes" / "uncommitted" | **Working tree** | Run `git diff` and `git diff --staged`, review changed files |
+| Text says "this branch" / "before I push" | **Branch** | Run `git diff <default-branch>...HEAD`, review changed files |
+| No scope signal at all | **Full project** | The entire workspace (default) |
+
+**Rules for every narrowed mode:**
+- Review only the in-scope code. Never silently widen into a full-workspace review.
+- You MAY read files outside the scope to judge a finding — e.g. opening a caller to confirm a signature change breaks it, or checking a DI registration in `Program.cs`. Report findings that live in the scoped code, and mention out-of-scope impact inside that finding.
+- If the scope resolves to zero files, say so and stop. Do not fall back to reviewing everything.
+- Skip the Phase 1 discovery below and go straight to reading the in-scope files. Still read the `.csproj` when target framework or package context matters.
+- State the mode and the exact files reviewed in the report's `Scope:` line.
+
+Only **Full project** mode runs the discovery phase below.
+
+## Phase 1 — Discover the codebase (Full project mode only)
 1. Enumerate source files: `**/*.cs`, `**/*.csproj`, `**/*.sln`, `**/Program.cs`, `**/Startup.cs`, `**/appsettings*.json`, `**/Dockerfile`. Exclude `bin/`, `obj/`, `packages/`, `.vs/`, `TestResults/`, `*.g.cs`, `*.Designer.cs`.
 2. Read `.sln` / `.csproj` first — target framework, package references, project layout.
 3. Read `Program.cs` (and `Startup.cs`) — DI, middleware, endpoint mapping.
@@ -85,7 +105,8 @@ Write the review to **`DOTNET_CODE_REVIEW.md` at the workspace root**. Overwrite
 # .NET Code Review Report
 
 **Date:** <YYYY-MM-DD>
-**Scope:** <N C# files reviewed across <projects>>. Target framework: <net8.0 etc>
+**Mode:** <Full project | Scoped | Snippet | Working tree | Branch>
+**Scope:** <Full project: N C# files across <projects>. Narrowed modes: list the exact files reviewed.> Target framework: <net8.0 etc>
 
 ## Executive Summary
 <3-5 sentences.>

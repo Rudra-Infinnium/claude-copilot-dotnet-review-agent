@@ -147,27 +147,32 @@ You should see `dotnet-code-reviewer` in the list. If not, see [Troubleshooting]
 
 ### A.4 Run the review
 
-At the Claude prompt, type any of these:
+The agent reviews the **whole project by default**, but you can narrow it — just say what you want:
+
+| What you type | What gets reviewed |
+|---|---|
+| `Review this .NET project` | Everything (default) |
+| `Review src/Billing/` | Just that folder |
+| `Review OrderService.cs` | Just that file |
+| `Review my changes` | Uncommitted work (`git diff`) |
+| `Review this branch` | Your branch vs `main` — good for self-review before pushing |
+| *paste a snippet* then `review this` | Just the pasted code |
+
+You can also name the agent explicitly if auto-delegation doesn't fire:
 
 ```
-Use the dotnet-code-reviewer agent to review this project
+Use the dotnet-code-reviewer agent to review src/Api/Controllers/
 ```
-
-or the simpler form:
-
-```
-Review this .NET project
-```
-
-(Because the agent has `MUST BE USED` in its description, Claude Code will auto-delegate to it.)
 
 The agent will:
-1. Explore your project
-2. Read source files
+1. Work out the scope from your request
+2. Read the in-scope files
 3. Write `DOTNET_CODE_REVIEW.md` at the project root
 4. Print a summary of finding counts and the top fix
 
 Open `DOTNET_CODE_REVIEW.md` in VS Code / Notepad / your editor of choice to review the results.
+
+> **Note:** narrowed reviews overwrite the same `DOTNET_CODE_REVIEW.md`. Check the `Mode:` line at the top of the report if you're unsure whether you're looking at a full or partial review.
 
 ---
 
@@ -226,14 +231,19 @@ Without Agent mode, Copilot cannot write the report file — you'll get the revi
 
 ### B.5 Run the review
 
-In the Copilot Chat panel, type:
+In the Copilot Chat panel, type `/dotnet-code-reviewer`. It reviews the **whole workspace by default**, but you can narrow it:
 
-```
-/dotnet-code-reviewer
-```
+| How you invoke it | What gets reviewed |
+|---|---|
+| `/dotnet-code-reviewer` | Everything (default) |
+| Select code in the editor first, then `/dotnet-code-reviewer` | Just the selection |
+| `/dotnet-code-reviewer #file:OrderService.cs` | Just that file |
+| `/dotnet-code-reviewer src/Billing/` | Just that folder |
+| `/dotnet-code-reviewer my changes` | Uncommitted work (`git diff`) |
+| `/dotnet-code-reviewer this branch` | Your branch vs `main` |
 
 Press Enter. Copilot will:
-1. Explore your workspace
+1. Work out the scope
 2. Ask you to approve tool calls (Read, Search, Write) — click **Continue** each time, or click **Always** to skip future prompts for that tool
 3. Write `DOTNET_CODE_REVIEW.md` at the workspace root
 4. Summarize the results in chat
