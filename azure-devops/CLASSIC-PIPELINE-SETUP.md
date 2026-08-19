@@ -202,12 +202,37 @@ This reads each repo's actual default branch rather than assuming `main` or `mas
 
 ## Cost
 
-Copilot CLI consumes **AI credits based on tokens processed**, so this is not free with your existing seats. The script limits exposure two ways:
+Copilot CLI consumes **AI credits based on tokens processed**. Your paid seats already include an allowance, so reviews may cost nothing extra — it depends on how much of that pool you already use.
+
+| Plan | Cost | AI credits included, per user per month |
+|---|---|---|
+| Copilot Business | $19/user | 1,900 |
+| Copilot Enterprise | $39/user | 3,900 |
+| Overage beyond the pool | | $0.01 per credit |
+
+Code completions are **not** billed in AI credits and stay unlimited on paid plans. Only agentic usage such as the CLI draws credits.
+
+### Use a dedicated service account
+
+**AI credits are allocated per user.** Every CI review runs under whoever owns `COPILOT_GITHUB_TOKEN`, so all reviews across every repo draw from that one account's allowance.
+
+Give a service account its own Copilot seat and issue the PAT from it. Two reasons:
+
+- A developer's PAT would make CI compete with their own Copilot usage for the same credits
+- A dedicated account makes CI consumption measurable in isolation
+
+Set a budget control on that account — available at user, cost center, and enterprise level — so overage cannot run away.
+
+### Per-review cost is unknown until measured
+
+GitHub's documentation states credits scale with tokens processed but publishes no conversion rate. Run this on one repo for a week and read the actual consumption before rolling out.
+
+The script caps exposure two ways:
 
 - Only the PR diff is sent, never the whole repository
 - Diffs over 200,000 characters are skipped (`-MaxDiffChars`)
 
-Watch your Copilot usage for the first week on one repo before rolling out widely.
+Sources: [individual plans](https://docs.github.com/en/copilot/concepts/billing/individual-plans), [organization and enterprise plans](https://docs.github.com/en/copilot/concepts/billing/organizations-and-enterprises), [about Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli).
 
 ## Changing the review criteria
 
