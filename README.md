@@ -32,23 +32,17 @@ A reusable code-review agent for **Claude Code** and **GitHub Copilot Chat** tha
 
 When invoked in a .NET project, the agent:
 
-1. Discovers all C# and config files itself (`*.cs`, `*.csproj`, `Program.cs`, `appsettings.json`, etc.)
-2. Reads the solution, entry points, controllers, services, `DbContext`, middleware
-3. Evaluates the code against **9 focus areas**:
-   - Architecture & Design
-   - Dependency Injection & Configuration
-   - Data Access (EF Core / Dapper)
-   - Async / Await & Concurrency
-   - Reliability & Resilience
-   - Performance
-   - Security
-   - Observability
-   - Code Quality
-4. Writes `DOTNET_CODE_REVIEW.md` at the project root containing:
-   - Executive summary
-   - Findings by severity (Critical / High / Medium / Low) with `file:line` locations and concrete recommendations
-   - 1–5 scorecard across all 9 areas
-   - Top 3 fixes to tackle first
+1. Discovers all C# and config files itself (`*.cs`, `*.csproj`, `Program.cs`, etc.)
+2. Reads `Program.cs` (DI, connector init, `Start`), the API / SDK / fill-up layers, and the database classes
+3. Reviews against **our organization's .NET connector conventions** (not generic ASP.NET Core):
+   - Architecture & separation (API / SDK / fill-up layers; method summaries)
+   - Database access — the mandatory `CommonDatabaseManager` pattern, `InitializeSqlParameters()`, private params, common-DLL execution, no inline SQL
+   - Performance (memory/CPU, `StringBuilder`)
+   - Security (no secrets in logs)
+   - Observability (Serilog)
+   - Code quality
+   - **Ignores intentional choices:** Singleton, sequential (no async), no EF/Dapper, no `IOptions<T>`, no controllers/middleware, `DateTime.Now`
+4. Writes `DOTNET_CODE_REVIEW.md` at the project root: findings by severity (Critical / High / Medium / Low) with `file:line` locations and concrete recommendations
 
 The agent is **read-only** — it never edits your source code. The only file it writes is `DOTNET_CODE_REVIEW.md`.
 
@@ -261,42 +255,42 @@ The generated `DOTNET_CODE_REVIEW.md` follows this structure. `Issue` and `Recom
 
 **Date:** 2026-08-19
 **Mode:** Full project
-**Scope:** 42 C# files across 3 projects. Target framework: net8.0
+**Scope:** 18 C# files across the connector
 
 ## Executive Summary
-Separation across Api/Application/Infrastructure is clean and DI is used consistently.
-The main risks are a captive dependency in the DbContext registration and an unguarded
-exception path that leaks stack traces to callers.
+The connector follows the API / SDK / fill-up separation well. The main gaps are a
+database class that bypasses the mandatory `InitializeSqlParameters()` pattern and a
+log line that could leak the connection string.
 
 ## Findings
 
-### Critical
-
-#### DbContext registered as Singleton
-- **Location:** `src/Api/Program.cs` — `Program.Main` (line 52)
-- **Severity:** Critical
-- **Issue:** `AppDbContext` is registered as a singleton, so one instance is shared across
-  all requests. It isn't thread-safe — concurrent requests corrupt the change tracker.
-- **Recommendation:** Use `builder.Services.AddDbContext<AppDbContext>(...)`, which
-  registers it as scoped.
-
 ### High
 
-#### No global exception handler
-- **Location:** `src/Api/Program.cs` — `Program.Main` (line 34)
+#### Hardcoded SQL in command instead of InitializeSqlParameters()
+- **Location:** `src/Data/OrderDataManager.cs` line 48
 - **Severity:** High
-- **Issue:** Unhandled exceptions propagate to the client with full stack traces,
-  exposing internal paths and library versions.
-- **Recommendation:** Add `app.UseExceptionHandler()` returning a `ProblemDetails`
-  response, and log the exception server-side.
+- **Issue:** The query text is written inline in the command and parameters are set
+  in the method body, bypassing the single `InitializeSqlParameters()` pattern.
+- **Recommendation:** Move the command text and parameters into `InitializeSqlParameters()`,
+  declare the parameters `private`, and execute via the common DLL method.
+
+#### Connection string may be written to logs
+- **Location:** `src/Data/CustomerDataManager.cs` line 23
+- **Severity:** High
+- **Issue:** The Serilog call logs the full connection object on failure, which can
+  expose the connection string and credentials.
+- **Recommendation:** Log only a safe identifier; never log the connection string.
 
 ### Medium
-### Low
 
-## Top 3 Fixes to Tackle First
-1. **Fix DbContext lifetime** — data corruption risk under concurrency.
-2. **Add global exception handler** — info leak on every unhandled error.
-3. **Remove blocking `.Result` calls** — thread pool starvation under load.
+#### String concatenation in a loop
+- **Location:** `src/Fillup/ReportBuilder.cs` line 71
+- **Severity:** Medium
+- **Issue:** The report text is built with `+=` inside a loop, allocating a new string
+  each iteration.
+- **Recommendation:** Use `StringBuilder` to accumulate the text.
+
+### Low
 ```
 
 ---
